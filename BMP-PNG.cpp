@@ -1,4 +1,4 @@
-﻿#include <iostream>
+#include <iostream>
 #include <string>
 #include <fstream>
 #include <filesystem>
@@ -46,39 +46,11 @@ std::tuple<unsigned, unsigned, unsigned, unsigned, unsigned, unsigned> Size(
 		}
 		stbi_image_free(data);
 	}
-	++down;
-	++right;
-	width = right - left;
-	height = down - up;
+	down;
+	right;
+	width = right - left + 1;
+	height = down - up + 1;
 	return { up, down, left, right, width, height };
-}
-unsigned char* BMP(const int x, const int y) {
-	unsigned size = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + y * x * sizeof(RGBQUAD);
-	unsigned char* bmp = new unsigned char[size];
-
-	BITMAPFILEHEADER& header = *static_cast<BITMAPFILEHEADER*>(static_cast<void*>(bmp));
-	header = BITMAPFILEHEADER{
-		0x4d42,
-		size,
-		NULL,
-		NULL,
-		sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) };
-
-	BITMAPINFOHEADER& info = *static_cast<BITMAPINFOHEADER*>(static_cast<void*>(bmp + sizeof(BITMAPFILEHEADER)));
-	info = BITMAPINFOHEADER{
-		sizeof(BITMAPINFOHEADER),
-		x,
-		y,
-		1,
-		sizeof(RGBQUAD) << 3,
-		BI_RGB,
-		NULL,
-		NULL,
-		NULL,
-		NULL,
-		NULL
-	};
-	return bmp;
 }
 
 int main(int argc, char** argv)
@@ -95,45 +67,49 @@ int main(int argc, char** argv)
 		<< " height = " << height
 		<< " width = " << width << "\n";
 
-	unsigned char* bmp = BMP(800,600/*width, height * count*/);
-	unsigned char* image = bmp + sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
-	std::cout
-		<< reinterpret_cast<uint64_t>(bmp) << "\n"
-		<< reinterpret_cast<uint64_t>(image) << "\n";
+	BITMAPFILEHEADER header{
+		0x4d42,
+		sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + count * height * width * sizeof(RGBQUAD),
+		NULL,
+		NULL,
+		sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) };
+	BITMAPINFOHEADER info{
+		sizeof(BITMAPINFOHEADER),
+		width,
+		height * count,
+		1,
+		sizeof(RGBQUAD) << 3,
+		BI_RGB,
+		NULL,
+		NULL,
+		NULL,
+		NULL,
+		NULL
+	};
+	
+	std::vector<unsigned char> image;
+	image.reserve(count * height * width * sizeof(RGBQUAD));
 
 	for (unsigned index = 0; index < count; ++index) {
 		int image_X, image_Y, channels;
-		unsigned char* data = stbi_load(names[index].data(), &image_X, &image_Y, &channels, STBI_rgb_alpha);
-		std::cout
-			<< names[index] << "\n"
-			<< " height = " << image_Y
-			<< " width = " << image_X
-			<< " biBitCount = " << channels << "\n";
+		unsigned char* data = stbi_load(names[index].data(), &image_X, &image_Y, &channels, 0);
 
-		for (int Y = 0/*up*/, in = 0; Y < 600/*down*/; ++Y) {
-			for (int X = 0/*left*/; X < 800/*right*/; ++X, in += sizeof(RGBQUAD)) {
+		for (int Y = up; Y <= down; ++Y) {
+			for (int X = left; X <= right; ++X) {
 				int out = (Y * image_X + X) * channels;
-				if (0 == data[out + 3]) {
-					image[in + 0] = 0;
-					image[in + 1] = 0;
-					image[in + 2] = 0;
-					image[in + 3] = 0;
-				}
-				else {
-					image[in + 0] = data[out + 0];
-					image[in + 1] = data[out + 1];
-					image[in + 2] = data[out + 2];
-					image[in + 3] = data[out + 3];
-				}
+				image.push_back(data[out + 2]);
+				image.push_back(data[out + 1]);
+				image.push_back(data[out + 0]);
+				image.push_back(data[out + 3]);
 			}
 		}
 		stbi_image_free(data);
 	}
-	std::ofstream file{ "bmp.bmp" };
-	file.write(
-		static_cast<char*>(static_cast<void*>(bmp)),
-		static_cast<BITMAPFILEHEADER*>(static_cast<void*>(bmp))->bfSize
-	);
+
+	std::ofstream file{ "bmp.bmp", std::ios::binary };
+	file.write(static_cast<char*>(static_cast<void*>(&header)), sizeof(header));
+	file.write(static_cast<char*>(static_cast<void*>(&info)), sizeof(info));
+	file.write(static_cast<char*>(static_cast<void*>(image.data())), image.size());
 	file.close();
 }
 
